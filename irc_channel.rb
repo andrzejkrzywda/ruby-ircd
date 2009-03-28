@@ -37,7 +37,6 @@ class IRCChannel < SynchronizedStore
             user.reply :part, client.userprefix, @name, msg
         }
         remove client
-        $channel_store.delete(@name) if self.empty?
         return true
     end
 
@@ -49,7 +48,6 @@ class IRCChannel < SynchronizedStore
         each_user {|user|
             user.reply :quit, client.userprefix, @name, msg if user!= client
         }
-        $channel_store.delete(@name) if self.empty?
     end
 
     def privatemsg(msg, client)
