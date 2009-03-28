@@ -562,7 +562,7 @@ if __FILE__ == $0
             s.do_ping()
         }
         
-        #s.addservice('serviceclient',IrcClient::TestActor)
+        #s.addservice('serviceclient',IrcClientService::TestActor)
         s.start
 
         #p.join
