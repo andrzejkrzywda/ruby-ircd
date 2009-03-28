@@ -544,7 +544,7 @@ end
 
 
 if __FILE__ == $0
-    #require 'ircclient'
+    #require 'irc_client_service'
     s = IRCServer.new( :Port => $config['port'] )
     begin
         while arg = ARGV.shift
