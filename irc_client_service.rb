@@ -1,4 +1,4 @@
-module IrcClient
+module IrcClientService
     require 'timeout'
     require "socket"
     require 'thread'
