@@ -1,8 +1,9 @@
 #!/usr/local/bin/ruby
-require 'webrick'
 require 'thread'
+require 'synchronized_store'
+require 'irc_server'
+require 'irc_channel'
 require 'ircreplies'
-require 'netutils'
 
 include IRCReplies
 
@@ -19,30 +20,6 @@ $verbose = ARGV.shift || false
 CHANNEL = /^[#\$&]+/
 PREFIX  = /^:[^ ]+ +(.+)$/
 
-class SynchronizedStore
-    def initialize
-        @store = {}
-        @mutex = Mutex.new
-    end
-    
-    def method_missing(name,*args)
-        @mutex.synchronize { @store.__send__(name,*args) }
-    end
-
-    def each_value
-        @mutex.synchronize do
-            @store.each_value {|u|
-                @mutex.unlock
-                yield u
-                @mutex.lock
-            }
-        end
-    end
-
-    def keys
-        @mutex.synchronize{@store.keys}
-    end
-end
 
 $user_store = SynchronizedStore.new
 class << $user_store
@@ -68,95 +45,6 @@ class << $channel_store
     alias channels keys
 end
 
-class IRCChannel < SynchronizedStore
-    include NetUtils
-    attr_reader :name, :topic
-    alias each_user each_value 
-
-    def initialize(name)
-        super()
-
-        @topic = "There is no topic"
-        @name = name
-        @oper = []
-        carp "create channel:#{@name}"
-    end
-
-    def add(client)
-        @oper << client.nick if @oper.empty? and @store.empty?
-        self[client.nick] = client
-    end
-    
-    def remove(client)
-        delete(client.nick)
-    end
-
-    def join(client)
-        return false if is_member? client
-        add client
-        #send join to each user in the channel
-        each_user {|user|
-            user.reply :join, client.userprefix, @name
-        }
-        return true
-    end
-
-    def part(client, msg)
-        return false if !is_member? client
-        each_user {|user|
-            user.reply :part, client.userprefix, @name, msg
-        }
-        remove client
-        $channel_store.delete(@name) if self.empty?
-        return true
-    end
-
-    def quit(client, msg)
-        #remove client should happen before sending notification
-        #to others since we dont want a notification to ourselves
-        #after quit.
-        remove client
-        each_user {|user|
-            user.reply :quit, client.userprefix, @name, msg if user!= client
-        }
-        $channel_store.delete(@name) if self.empty?
-    end
-
-    def privatemsg(msg, client)
-        each_user {|user|
-            user.reply :privmsg, client.userprefix, @name, msg if user != client
-        }
-    end
-
-    def notice(msg, client)
-        each_user {|user|
-            user.reply :notice, client.userprefix, @name, msg if user != client
-        }
-    end
-
-    def topic(msg=nil,client=nil)
-        return @topic if msg.nil?
-        @topic = msg
-        each_user {|user|
-            user.reply :topic, client.userprefix, @name, msg
-        }
-        return @topic
-    end
-
-    def nicks
-        return keys
-    end
-
-    def mode(u)
-        return @oper.include?(u.nick) ? '@' : ''
-    end
-
-    def is_member?(m)
-        values.include?(m)
-    end
-
-    alias has_nick? is_member?
-end
 
 class IRCClient
     include NetUtils
@@ -309,9 +197,9 @@ class IRCClient
         reply :numeric, RPL_BOUNCE ,"Try server #{server}, port #{port}"
     end
 
-    def repl_ison()
+    def repl_ison(*args)
         #XXX TODO
-        reply :numeric, RPL_ISON,"notimpl"
+        reply :numeric, RPL_ISON, args.to_s
     end
 
     def repl_away(nick, msg)
@@ -679,6 +567,7 @@ class ProxyClient < IRCClient
     end
 
     def reply(method, *args)
+        puts "reply: #{method}, args: #{args}"
         case method
         when :raw
             arg = *args
@@ -746,143 +635,6 @@ class ProxyClient < IRCClient
             handle_privmsg channel, msg
         else
             handle_unknown "#{method} #{args.join(',')}"
-        end
-    end
-end
-
-class IRCServer < WEBrick::GenericServer
-    include NetUtils
-    def usermodes
-        return "aAbBcCdDeEfFGhHiIjkKlLmMnNopPQrRsStUvVwWxXyYzZ0123459*@"
-    end
-
-    def channelmodes
-        return "bcdefFhiIklmnoPqstv"
-    end
-
-    def run(sock)
-        client = IRCClient.new(sock, self)
-        client.handle_connect
-        irc_listen(sock, client)
-    end
-
-    def addservice(nick,actor)
-        carp "Add service #{nick}"
-        client = ProxyClient.new(nick, actor, self)
-        client.handle_connect
-        #the client is able to call the methods directly
-        #so we dont need to bother about looping here.
-    end
-
-    def hostname
-        begin
-            sockaddr = @socket.getsockname
-            begin
-                return Socket.getnameinfo(sockaddr, Socket::NI_NAMEREQD).first
-            rescue 
-                return Socket.getnameinfo(sockaddr).first
-            end
-        rescue
-            return @socket.peeraddr[2]
-        end
-    end
-
-    def irc_listen(sock, client)
-        begin
-            while !sock.closed? && !sock.eof?
-                s = sock.gets
-                handle_client_input(s.chomp, client)
-            end
-        rescue Exception => e
-            carp e
-        end
-        client.handle_abort()
-    end
-
-    def handle_client_input(input, client)
-        carp "<-- #{input}"
-        s = if input =~ PREFIX
-                $1
-            else
-                input
-            end
-        case s
-        when /^[ ]*$/
-            return
-        when /^PASS +(.+)$/i
-            client.handle_pass($1.strip)
-        when /^NICK +(.+)$/i
-            client.handle_nick($1.strip) #done
-        when /^USER +([^ ]+) +([0-9]+) +([^ ]+) +:(.*)$/i
-            client.handle_user($1, $2, $3, $4) #done
-        when /^USER +([^ ]+) +([0-9]+) +([^ ]+) +:*(.*)$/i
-            #opera does this.
-            client.handle_user($1, $2, $3, $4) #done
-        when /^USER ([^ ]+) +[^:]*:(.*)/i
-            #chatzilla does this.
-            client.handle_user($1, '', '', $3) #done
-        when /^JOIN +(.+)$/i
-            client.handle_join($1) #done
-        when /^PING +([^ ]+) *(.*)$/i
-            client.handle_ping($1, $2) #done
-        when /^PONG +:(.+)$/i , /^PONG +(.+)$/i
-            client.handle_pong($1)
-        when /^PRIVMSG +([^ ]+) +:(.*)$/i
-            client.handle_privmsg($1, $2) #done
-        when /^NOTICE +([^ ]+) +(.*)$/i
-            client.handle_notice($1, $2) #done
-        when /^PART :+([^ ]+) *(.*)$/i  
-            #some clients require this.
-            client.handle_part($1, $2) #done
-        when /^PART +([^ ]+) *(.*)$/i
-            client.handle_part($1, $2) #done
-        when /^QUIT :(.*)$/i
-            client.handle_quit($1) #done
-        when /^QUIT *(.*)$/i
-            client.handle_quit($1) #done
-        when /^TOPIC +([^ ]+) *:*(.*)$/i
-            client.handle_topic($1, $2) #done
-        when /^AWAY +:(.*)$/i
-            client.handle_away($1)
-        when /^AWAY +(.*)$/i #for opera
-            client.handle_away($1)
-        when /^:*([^ ])* *AWAY *$/i
-            client.handle_away(nil)
-        when /^LIST *(.*)$/i
-            client.handle_list($1)
-        when /^WHOIS +([^ ]+) +(.+)$/i
-            client.handle_whois($1,$2)
-        when /^WHOIS +([^ ]+)$/i
-            client.handle_whois(nil,$1)
-        when /^WHO +([^ ]+) *(.*)$/i
-            client.handle_who($1, $2)
-        when /^NAMES +([^ ]+) *(.*)$/i
-            client.handle_names($1, $2)
-        when /^MODE +([^ ]+) *(.*)$/i
-            client.handle_mode($1, $2)
-        when /^USERHOST +:(.+)$/i
-            #besirc does this (not accourding to RFC 2812)
-            client.handle_userhost($1)
-        when /^USERHOST +(.+)$/i
-            client.handle_userhost($1)
-        when /^RELOAD +(.+)$/i
-            client.handle_reload($1)
-        when /^VERSION *$/i
-            client.handle_version()
-        when /^EVAL (.*)$/i
-            #strictly for debug
-            client.handle_eval($1)
-        else
-            client.handle_unknown(s)
-        end
-    end
-
-    def do_ping()
-        while true
-            sleep 60
-            $user_store.each_user {|client|
-                client.send_ping
-            }
         end
     end
 end
