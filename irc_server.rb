@@ -1,12 +1,15 @@
 require 'netutils'
 require 'webrick'
+require 'stores'
+
 class IRCServer < WEBrick::GenericServer
     include NetUtils
-    attr_reader :user_store
+    attr_reader :user_store, :channel_store
 
     def initialize(args)
       super(args)
-      @user_store = UserStore.new
+      @user_store    = UserStore.new
+      @channel_store = ChannelStore.new
     end
     def usermodes
         return "aAbBcCdDeEfFGhHiIjkKlLmMnNopPQrRsStUvVwWxXyYzZ0123459*@"

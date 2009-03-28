@@ -189,19 +189,19 @@ class IRCClient
     end
 
     def send_topic(channel)
-        if $channel_store[channel]
-            reply :numeric, RPL_TOPIC,channel, "#{$channel_store[channel].topic}" 
+        if @serv.channel_store[channel]
+            reply :numeric, RPL_TOPIC,channel, "#{@serv.channel_store[channel].topic}" 
         else
             send_notonchannel channel
         end
     end
 
     def names(channel)
-        return $channel_store[channel].nicks
+        return @serv.channel_store[channel].nicks
     end
 
     def send_nameslist(channel)
-        c =  $channel_store[channel]
+        c =  @serv.channel_store[channel]
         if c.nil?
             carp "names failed :#{c}"
             return 
@@ -226,7 +226,7 @@ class IRCClient
                 carp "no such channel:#{c}"
                 return
             end
-            channel = $channel_store.add(c)
+            channel = @serv.channel_store.add(c)
             if channel.join(self)
                 send_topic(c)
                 send_nameslist(c)
@@ -248,7 +248,7 @@ class IRCClient
     def handle_privmsg(target, msg)
         case target.strip
         when CHANNEL
-            channel= $channel_store[target]
+            channel= @serv.channel_store[target]
             if !channel.nil?
                 channel.privatemsg(msg, self)
             else
@@ -270,7 +270,7 @@ class IRCClient
     def handle_notice(target, msg)
         case target.strip
         when CHANNEL
-            channel= $channel_store[target]
+            channel= @serv.channel_store[target]
             if !channel.nil?
                 channel.notice(msg, self)
             else
@@ -287,8 +287,8 @@ class IRCClient
     end
 
     def handle_part(channel, msg)
-        if $channel_store.channels.include? channel
-            if $channel_store[channel].part(self, msg)
+        if @serv.channel_store.channels.include? channel
+            if @serv.channel_store[channel].part(self, msg)
                 @channels.delete(channel)
             else
                 send_notonchannel channel
@@ -303,7 +303,7 @@ class IRCClient
         return if !@alive
         @alive = false
         @channels.each do |channel|
-            $channel_store[channel].quit(self, msg)
+            @serv.channel_store[channel].quit(self, msg)
         end
         @serv.user_store.delete(self.nick)
         carp "#{self.nick} #{msg}"
@@ -316,7 +316,7 @@ class IRCClient
             send_topic(channel)
         else
             begin
-                $channel_store[channel].topic(topic,self)
+                @serv.channel_store[channel].topic(topic,self)
             rescue Exception => e
                 carp e
             end
@@ -339,14 +339,14 @@ class IRCClient
         case channel.strip
         when /^#/
             channel.split(/,/).each {|cname|
-                c = $channel_store[cname.strip]
+                c = @serv.channel_store[cname.strip]
                 reply :numeric, RPL_LIST, c.name, c.topic if c
             }
         else
             #older opera client sends LIST <1000
             #we wont obey the boolean after list, but allow the listing
             #nonetheless
-            $channel_store.each_channel {|c|
+            @serv.channel_store.each_channel {|c|
                 reply :numeric, RPL_LIST, c.name, c.topic
             }
         end
@@ -375,7 +375,7 @@ class IRCClient
     end
 
     def handle_who(mask, rest)
-        channel = $channel_store[mask]
+        channel = @serv.channel_store[mask]
         hopcount = 0
         if channel.nil?
             #match against all users
