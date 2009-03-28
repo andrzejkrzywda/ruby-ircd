@@ -21,16 +21,14 @@ $verbose = ARGV.shift || false
 CHANNEL = /^[#\$&]+/
 PREFIX  = /^:[^ ]+ +(.+)$/
 
-
-$user_store = SynchronizedStore.new
-class << $user_store
-    def <<(client)
-        self[client.nick] = client
-    end
-    
-    alias nicks keys
-    alias each_user each_value 
+class UserStore < SynchronizedStore
+  def <<(client)
+      self[client.nick] = client
+  end
+  alias nicks keys
+  alias each_user each_value 
 end
+$user_store = UserStore.new
 
 $channel_store = SynchronizedStore.new
 class << $channel_store
