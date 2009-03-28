@@ -28,10 +28,7 @@ class UserStore < SynchronizedStore
   alias nicks keys
   alias each_user each_value 
 end
-$user_store = UserStore.new
-
-$channel_store = SynchronizedStore.new
-class << $channel_store
+class ChannelStore < SynchronizedStore 
     def add(c)
         self[c] ||= IRCChannel.new(c)
     end
@@ -43,6 +40,7 @@ class << $channel_store
     alias each_channel each_value 
     alias channels keys
 end
+$channel_store = ChannelStore.new
 
 if __FILE__ == $0
     #require 'irc_client_service'

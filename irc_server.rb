@@ -2,6 +2,12 @@ require 'netutils'
 require 'webrick'
 class IRCServer < WEBrick::GenericServer
     include NetUtils
+    attr_reader :user_store
+
+    def initialize(args)
+      super(args)
+      @user_store = UserStore.new
+    end
     def usermodes
         return "aAbBcCdDeEfFGhHiIjkKlLmMnNopPQrRsStUvVwWxXyYzZ0123459*@"
     end
@@ -130,7 +136,7 @@ class IRCServer < WEBrick::GenericServer
     def do_ping()
         while true
             sleep 60
-            $user_store.each_user {|client|
+            @user_store.each_user {|client|
                 client.send_ping
             }
         end

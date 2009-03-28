@@ -51,22 +51,22 @@ class IRCClient
     
     def handle_nick(s)
         carp "nick => #{s}"
-        if $user_store[s].nil?
+        if @serv.user_store[s].nil?
             userlist = {}
             if @nick.nil?
                 handle_newconnect(s)
             else
                 userlist[s] = self if self.nick != s
-                $user_store.delete(@nick)
+                @serv.user_store.delete(@nick)
                 @nick = s
             end
 
-            $user_store << self
+            @serv.user_store << self
 
             #send the info to the world
             #get unique users.
             @channels.each {|c|
-                $channel_store[c].each_user {|u|
+                channel_store[c].each_user {|u|
                     userlist[u.nick] = u
                 }
             }
@@ -76,9 +76,9 @@ class IRCClient
             @usermsg = ":#{@nick}!~#{@user}@#{@peername}"
         else
             #check if we are just nicking ourselves.
-            unless $user_store[s] == self
+            unless @serv.user_store[s] == self
                 #verify the connectivity of earlier guy
-                unless $user_store[s].closed?
+                unless @serv.user_store[s].closed?
                     reply :numeric, ERR_NICKNAMEINUSE,"* #{s} ","Nickname is already in use."
                     @nick_tries += 1
                     if @nick_tries > $config['nick-tries']
@@ -87,8 +87,8 @@ class IRCClient
                     end
                     return
                 else
-                    $user_store[s].handle_abort
-                    $user_store[s] = self
+                    @serv.user_store[s].handle_abort
+                    @serv.user_store[s] = self
                 end
             end
         end
@@ -255,7 +255,7 @@ class IRCClient
                 send_nonick(target)
             end
         else
-            user = $user_store[target]
+            user = @serv.user_store[target]
             if !user.nil?
                 if !user.state[:away].nil?
                     repl_away(user.nick,user.state[:away])
@@ -277,7 +277,7 @@ class IRCClient
                 send_nonick(target)
             end
         else
-            user = $user_store[target]
+            user = @ser.user_store[target]
             if !user.nil?
                 user.reply :notice, self.userprefix, user.nick, msg
             else
@@ -305,7 +305,7 @@ class IRCClient
         @channels.each do |channel|
             $channel_store[channel].quit(self, msg)
         end
-        $user_store.delete(self.nick)
+        @serv.user_store.delete(self.nick)
         carp "#{self.nick} #{msg}"
         @socket.close if !@socket.closed?
     end
@@ -358,7 +358,7 @@ class IRCClient
         return reply(:numeric, RPL_NONICKNAMEGIVEN, "", "No nickname given") if nicks.strip.length == 0
         nicks.split(/,/).each {|nick|
             nick.strip!
-            user = $user_store[nick]
+            user = @serv.user_store[nick]
             if user
                 reply :numeric, RPL_WHOISUSER, "#{user.nick} #{user.user} #{user.host} *", "#{user.realname}"
                 reply :numeric, RPL_WHOISCHANNELS, user.nick, "#{user.channels.join(' ')}"
@@ -379,7 +379,7 @@ class IRCClient
         hopcount = 0
         if channel.nil?
             #match against all users
-            $user_store.each_user {|user|
+            @serv.user_store.each_user {|user|
                 reply :numeric, RPL_WHOREPLY ,
                     "#{user.channels[0]} #{user.userprefix} #{user.host} #{$config['hostname']} #{user.nick} H" , 
                     "#{hopcount} #{user.realname}" if File.fnmatch?(mask, "#{user.host}.#{user.realname}.#{user.nick}")
@@ -404,7 +404,7 @@ class IRCClient
     def handle_userhost(nicks)
         info = []
         nicks.split(/,/).each {|nick|
-            user = $user_store[nick]
+            user = @serv.user_store[nick]
             info << user.nick + '=-' + user.nick + '@' + user.peer
         }
         reply :numeric, RPL_USERHOST,"", info.join(' ')
