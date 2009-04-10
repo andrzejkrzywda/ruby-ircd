@@ -5,7 +5,7 @@
 # requires rsa.key and cert.pem to be created by the administrator.
 
 require 'ircd'
-require 'ircclient'
+require 'irc_client_service'
 require 'netutils'
 require 'openssl'
 
@@ -15,8 +15,7 @@ begin
     pkey = OpenSSL::PKey::RSA.new(File.open("rsa.key").read) 
     cert = OpenSSL::X509::Certificate.new(File.open("cert.pem").read)  
 
-    s = IRCServer.new( :Port => 6679, 
-                      :Logger => WEBrick::BasicLog::new('devrcd.log', WEBrick::Log::DEBUG),
+    s = IRCServer.new( :Port => 6667, 
                       :SSLEnable => true,
                       :SSLVerifyClient => OpenSSL::SSL::VERIFY_NONE,
                       :SSLCertificate => cert,
@@ -34,6 +33,10 @@ begin
         system("kill -9 #{$$}")
         s.shutdown
     }
+        p = Thread.new {
+            s.do_ping()
+        }
+        s.start
 
 rescue Exception => e
     p e
