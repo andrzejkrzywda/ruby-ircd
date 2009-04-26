@@ -232,6 +232,26 @@ module IrcClientService
         end
     end
 
+require 'rubygems'
+require 'xmpp4r-simple'
+class JabberActor < IrcActor
+  def initialize(client)
+    super(client)
+    config = YAML.load(open("jabber.yml"))
+    im = Jabber::Simple.new(config["jid"], config["password"])
+    on(:connect) {|server,port,nick,pass|
+      client.send_join "##{config['channel']}"
+      puts "joint #{config['channel']}"
+    }
+    on(:privmsg) do |nick, channel, msg|
+      puts "delivering #{msg}"
+      config["recipients"].each do |r|
+        im.deliver(r, "#{nick}: #{msg}")
+      end
+    end
+  end
+end
+
     class IrcConnector
         include IRCReplies
         include NetUtils
@@ -476,7 +496,8 @@ module IrcClientService
             pass = opts[:pass] || 'netserver'
             irc = IrcConnector.new(server, port , nick, pass)
             #irc.actor = PrintActor.new(irc)
-            irc.actor = TestActor.new(irc)
+            #irc.actor = TestActor.new(irc)
+            irc.actor = JabberActor.new(irc)
             begin
                 irc.run
             rescue SystemExit => e
@@ -588,7 +609,7 @@ module IrcClientService
     if __FILE__ == $0
         server = 'localhost'
         port = 6667
-        nick = 'genericclient'
+        nick = 'bot'
         while arg = ARGV.shift
             case arg
             when /-s/
