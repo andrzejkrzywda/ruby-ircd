@@ -232,25 +232,44 @@ module IrcClientService
         end
     end
 
-require 'rubygems'
-require 'xmpp4r-simple'
-class JabberActor < IrcActor
-  def initialize(client)
-    super(client)
-    config = YAML.load(open("jabber.yml"))
-    im = Jabber::Simple.new(config["jid"], config["password"])
-    on(:connect) {|server,port,nick,pass|
-      client.send_join "##{config['channel']}"
-      puts "joint #{config['channel']}"
-    }
-    on(:privmsg) do |nick, channel, msg|
-      puts "delivering #{msg}"
-      config["recipients"].each do |r|
-        im.deliver(r, "#{nick}: #{msg}")
+    require 'rubygems'
+    require 'xmpp4r-simple'
+
+    class JabberActor < IrcActor
+      def initialize(client)
+        super(client)
+        config = YAML.load(open("jabber.yml"))
+        im = Jabber::Simple.new(config["jid"], config["password"])
+        Thread.new do
+          begin
+            while true do
+              sleep 3
+              im.received_messages do |m|
+                puts "I got a message, #{m.body}"
+                if m.type == :chat
+                  config["recipients"].each do |r|
+                    im.deliver(r, "#{m.from}: #{m.body}")
+                  end
+                end
+              end
+            end
+          rescue Exception
+            puts $!
+          end
+        end
+
+        on(:connect) {|server,port,nick,pass|
+          client.send_join "##{config['channel']}"
+          puts "joint #{config['channel']}"
+        }
+        on(:privmsg) do |nick, channel, msg|
+          puts "delivering #{msg}"
+          config["recipients"].each do |r|
+            im.deliver(r, "#{nick}: #{msg}")
+          end
+        end
       end
     end
-  end
-end
 
     class IrcConnector
         include IRCReplies
