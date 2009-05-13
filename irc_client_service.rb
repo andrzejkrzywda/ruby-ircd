@@ -247,6 +247,7 @@ module IrcClientService
               im.received_messages do |m|
                 puts "I got a message, #{m.body}"
                 if m.type == :chat
+                  client.msg_channel "##{config["channel"]}", "#{m.from}: #{m.body}"
                   config["recipients"].each do |r|
                     im.deliver(r, "#{m.from}: #{m.body}")
                   end
