@@ -1,5 +1,6 @@
 class IRCDaemon
   def initialize
+
     #require 'irc_client_service'
     s = IRCServer.new( :Port => $config['port'] )
     begin
